@@ -8,13 +8,17 @@
 class Application
 {
 private:
-	std::shared_ptr<GLFWwindow> _window = nullptr;
-
-	Renderer _renderer;
+	GLFWwindow* _window = nullptr;
+	std::unique_ptr<Renderer> _renderer = nullptr;
 
 public:
-	Application() : _renderer(_window) {}
+	// Query functions
+	bool is_closing();
 
+	// Initialization and shutdown functions
 	bool init();
+	bool shutdown();
+
+	void run();
 };
 
