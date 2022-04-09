@@ -3,11 +3,15 @@
 #include <Winuser.h>
 #include <cstdio>
 
-bool Renderer::init_input_layouts()
-{
-    
-    
-    return true;
+namespace Colors {
+    XMGLOBALCONST DirectX::XMFLOAT4 White{ 1.0f, 1.0f, 1.0f, 1.0f };
+    XMGLOBALCONST DirectX::XMFLOAT4 Black{ 0.0f, 0.0f, 0.0f, 1.0f };
+    XMGLOBALCONST DirectX::XMFLOAT4 Red { 1.0f, 0.0f, 0.0f, 1.0f };
+    XMGLOBALCONST DirectX::XMFLOAT4 Green { 0.0f, 1.0f, 0.0f, 1.0f };
+    XMGLOBALCONST DirectX::XMFLOAT4 Blue { 0.0f, 0.0f, 1.0f, 1.0f };
+    XMGLOBALCONST DirectX::XMFLOAT4 Yellow { 1.0f, 1.0f, 0.0f, 1.0f };
+    XMGLOBALCONST DirectX::XMFLOAT4 Cyan { 0.0f, 1.0f, 1.0f, 1.0f };
+    XMGLOBALCONST DirectX::XMFLOAT4 Magenta { 1.0f, 0.0f, 1.0f, 1.0f };
 }
 
 void Renderer::shutdown()
@@ -293,23 +297,17 @@ bool Renderer::init_g_buffer()
 
 bool Renderer::init_shaders()
 {   
-    ShaderByteCode shaderByteCode;
-
-    shaderByteCode = load_compiled_shader("../x64/Debug/VertexShader.vert.cso");
-    if (shaderByteCode.empty())
-        return false;
-
-    if (FAILED(_device->CreateVertexShader(shaderByteCode.data(), shaderByteCode.size(), nullptr, &_vertexShader))) {
-        std::cout << "D3D11 Error: Failed to create vertex shader." << std::endl;
+    // Init Vertex Shaders
+    
+    VertexInputLayout inputLayout = StaticVertices::get_layout();
+    ShaderByteCode staticVertexShader = load_compiled_shader("../x64/Debug/VertexShader.vert.cso");
+    
+    if (FAILED(_device->CreateInputLayout(inputLayout.data(), inputLayout.size(), staticVertexShader.data(), staticVertexShader.size(), &_shaders.inputLayouts.staticVertices))) {
+        std::cout << "D3D11 Error: Failed to create input layout.\n";
         return false;
     }
-
-    shaderByteCode = load_compiled_shader("../x64/Debug/GenerateGBuffer.frag.cso");
-    if (shaderByteCode.empty())
-        return false;
-
-    if (FAILED(_device->CreatePixelShader(shaderByteCode.data(), shaderByteCode.size(), nullptr, &_pixelShader))) {
-        std::cout << "D3D11 Error: Failed to create pixel shader." << std::endl;
+    if (FAILED(_device->CreateVertexShader(staticVertexShader.data(), staticVertexShader.size(), nullptr, &_shaders.vertexShaders.staticVertexShader))) {
+        std::cout << "D3D11 Error: Failed to create vertex shader.\n";
         return false;
     }
 
@@ -332,8 +330,50 @@ bool Renderer::init()
     D3D11_DEPTH_STENCIL_DESC DSDesc = {};
     DSDesc.DepthEnable = FALSE;
     DSDesc.StencilEnable = FALSE;
+    
+    if (FAILED(_device->CreateDepthStencilState(&DSDesc, &_depthStencilState))) {
+        std::cout << "D3D11 Error: Failed to create depth stencil state.\n";
+        return false;
+    }
 
-    _device->CreateDepthStencilState(&DSDesc, &_depthStencilState);
+    std::vector<StaticVertices> vertices = {
+        { DirectX::XMFLOAT3(-1.0f, -1.0f, -1.0f), Colors::White },
+        { DirectX::XMFLOAT3(-1.0f,  1.0f, -1.0f), Colors::Black },
+        { DirectX::XMFLOAT3( 1.0f,  1.0f, -1.0f), Colors::Red },
+        { DirectX::XMFLOAT3( 1.0f, -1.0f, -1.0f), Colors::Green },
+        { DirectX::XMFLOAT3(-1.0f, -1.0f,  1.0f), Colors::Blue },
+        { DirectX::XMFLOAT3(-1.0f,  1.0f,  1.0f), Colors::Yellow },
+        { DirectX::XMFLOAT3( 1.0f,  1.0f,  1.0f), Colors::Cyan },
+        { DirectX::XMFLOAT3( 1.0f, -1.0f,  1.0f), Colors::Magenta}
+    };
+
+    D3D11_BUFFER_DESC vertexBufferDesc = {};
+    vertexBufferDesc.ByteWidth = sizeof(StaticVertices) * vertices.size();
+    vertexBufferDesc.Usage = D3D11_USAGE_IMMUTABLE;
+    vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+
+    D3D11_SUBRESOURCE_DATA vertexBufferSubResource = {};
+    vertexBufferSubResource.pSysMem = vertices.data();
+
+    if (FAILED(_device->CreateBuffer(&vertexBufferDesc, &vertexBufferSubResource, &_vertexBuffer))) {
+        std::cout << "D3D11 Error: Failed to create vertex buffer.\n";
+        return false;
+    }
+
+    std::vector<uint32_t> indices = { 0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 6, 7, 0, 7, 8, 0, 8, 1 };
+
+    D3D11_BUFFER_DESC indexBufferDesc = {};
+    indexBufferDesc.ByteWidth = sizeof(uint32_t) * indices.size();
+    indexBufferDesc.Usage = D3D11_USAGE_IMMUTABLE;
+    indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+
+    D3D11_SUBRESOURCE_DATA indexBufferSubResource = {};
+    indexBufferSubResource.pSysMem = indices.data();
+
+    if (FAILED(_device->CreateBuffer(&indexBufferDesc, &indexBufferSubResource, &_indexBuffer))) {
+        std::cout << "D3D11 Error: Failed to create index buffer.\n";
+        return false;
+    }
 
     return true;
 }
@@ -357,15 +397,27 @@ void Renderer::draw()
     
     _context->RSSetViewports(1, &viewport);
 
-    _context->IASetVertexBuffers(0, 0, NULL, 0, 0);
-    _context->IASetVertexBuffers(1, 0, NULL, 0, 0);
-    _context->IASetIndexBuffer(NULL, DXGI_FORMAT_R32_UINT, 0);
-    _context->IASetInputLayout(NULL);
+    _context->IASetInputLayout(_shaders.inputLayouts.staticVertices.Get());
+
+    uint32_t stride = sizeof(StaticVertices), offset = 0;
+    _context->IASetVertexBuffers(0, 1, _vertexBuffer.GetAddressOf(), &stride, &offset);
     _context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    _context->VSSetShader(_vertexShader.Get(), nullptr, 0);
+    _context->VSSetShader(_shaders.vertexShaders.staticVertexShader.Get(), nullptr, 0);
     _context->PSSetShader(_pixelShader.Get(), nullptr, 0);
 
     _context->Draw(3, 0);
 
     _swapchain.swapchain->Present(0, 0);
+}
+
+VertexInputLayout StaticVertices::get_layout()
+{
+    VertexInputLayout inputLayoutDesc = {
+        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+        //{"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
+        //{"TEXCORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0}
+        {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0}
+    };
+
+    return inputLayoutDesc;
 }

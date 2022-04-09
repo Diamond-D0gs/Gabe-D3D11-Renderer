@@ -3,6 +3,7 @@
 #include <memory>
 #include <iostream>
 #include <vector>
+#include <unordered_map>
 
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -17,11 +18,15 @@ using Microsoft::WRL::ComPtr;
 #include <SimpleMath.h>
 
 typedef std::vector<byte> ShaderByteCode;
+typedef std::vector<D3D11_INPUT_ELEMENT_DESC> VertexInputLayout;
 
 struct StaticVertices {
 	DirectX::XMFLOAT3 position;
-	DirectX::XMFLOAT3 normal;
-	DirectX::XMFLOAT2 texcord;
+	/*DirectX::XMFLOAT3 normal;
+	DirectX::XMFLOAT2 texcord;*/
+	DirectX::XMFLOAT4 color;
+
+	static VertexInputLayout get_layout();
 };
 
 struct ColorBuffer {
@@ -65,14 +70,24 @@ private:
 #endif
 	ComPtr<ID3D11Device5> _device = nullptr;
 	ComPtr<ID3D11DeviceContext4> _context = nullptr;
-	ComPtr<ID3D11VertexShader> _vertexShader = nullptr;
-	ComPtr<ID3D11PixelShader> _pixelShader = nullptr;
 	ComPtr<ID3D11DepthStencilState> _depthStencilState = nullptr;
 	struct GBuffer {
 		DepthBuffer depthBuffer;
 		ColorBuffer vertNormalUVCord;
 		ColorBuffer materialID;
 	} _gBuffer;
+	struct Shaders {
+		struct InputLayouts {
+			ComPtr<ID3D11InputLayout> staticVertices;
+		} inputLayouts;
+		struct VertexShaders {
+			ComPtr<ID3D11VertexShader> staticVertexShader;
+		} vertexShaders;
+	} _shaders;
+
+	// Assets
+	ComPtr<ID3D11Buffer> _vertexBuffer;
+	ComPtr<ID3D11Buffer> _indexBuffer;
 
 	// Helper functions
 	ShaderByteCode load_compiled_shader(const char* shaderPath);
@@ -83,7 +98,7 @@ private:
 	// Initalizes the render target views and shader resource views for deferred rendering.
 	bool init_g_buffer();
 	bool init_shaders();
-	bool init_input_layouts();
+	//bool init_assets();
 
 public:
 	Renderer(GLFWwindow* window) : _window(window) {}
